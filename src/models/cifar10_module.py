@@ -4,9 +4,11 @@ import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
+from torchvision.transforms import transforms
+import timm
+import torch.nn.functional as F
 
-
-class MNISTLitModule(LightningModule):
+class Cifar10LitModule(LightningModule):
     """Example of LightningModule for MNIST classification.
 
     A LightningModule organizes your PyTorch code into 6 sections:
@@ -23,7 +25,6 @@ class MNISTLitModule(LightningModule):
 
     def __init__(
         self,
-        net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
     ):
@@ -33,7 +34,7 @@ class MNISTLitModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False, ignore=["net"])
 
-        self.net = net
+        self.net = timm.create_model('resnet18', pretrained=True, num_classes=10)
 
         # loss function
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -51,8 +52,25 @@ class MNISTLitModule(LightningModule):
         # for tracking best so far validation accuracy
         self.val_acc_best = MaxMetric()
 
+        self.transforms_1 = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        # self.transforms_2 = transforms.Resize((32,32))
+
+
     def forward(self, x: torch.Tensor):
         return self.net(x)
+
+    @torch.jit.export
+    def forward_jit(self, x):
+        with torch.no_grad():
+            # transform the inputs
+            # forward pass
+            x = self.transforms_1(x)
+            # x = self.transforms_2(x)
+            logits = self.net(x)
+
+            preds = F.softmax(logits[0], dim=0)
+
+        return preds
 
     def on_train_start(self):
         # by default lightning executes validation step sanity checks before training starts,
@@ -143,5 +161,5 @@ if __name__ == "__main__":
     import pyrootutils
 
     root = pyrootutils.setup_root(__file__, pythonpath=True)
-    cfg = omegaconf.OmegaConf.load(root / "configs" / "model" / "mnist.yaml")
+    cfg = omegaconf.OmegaConf.load(root / "configs" / "model" / "cifar10.yaml")
     _ = hydra.utils.instantiate(cfg)
